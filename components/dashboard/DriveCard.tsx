@@ -1,10 +1,3 @@
-"use client";
-
-import { Modal, ModalHeader, ModalBody, ModalFooter } from "flowbite-react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-import { deleteDrive } from "@/app/actions/drive";
 import type { DriveAccount } from "@/types";
 
 /** Pasangan gradien bertema perjalanan, dipilih deterministik dari destinasi. */
@@ -37,18 +30,6 @@ function formatTanggal(tanggal: string): string {
 }
 
 export function DriveCard({ entry }: { entry: DriveAccount }) {
-  const router = useRouter();
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [isDeleting, startDelete] = useTransition();
-
-  function handleDelete() {
-    startDelete(async () => {
-      await deleteDrive(entry.id);
-      setShowConfirm(false);
-      router.refresh();
-    });
-  }
-
   return (
     <article className="surface group flex flex-col overflow-hidden transition-shadow duration-300 hover:shadow-md">
       {/* Banner album */}
@@ -102,67 +83,11 @@ export function DriveCard({ entry }: { entry: DriveAccount }) {
           href={entry.drive_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="btn btn-outline btn-sm mt-1 w-full"
+          className="btn btn-outline btn-sm mt-auto w-full"
         >
           Buka folder Google Drive
         </a>
-
-        <div className="mt-auto flex items-center justify-end gap-1 border-t border-stone-100 pt-3 dark:border-stone-800">
-          <Link
-            href={`/edit/${entry.id}`}
-            className="btn btn-ghost btn-sm"
-          >
-            Edit
-          </Link>
-          <button
-            type="button"
-            onClick={() => setShowConfirm(true)}
-            className="btn btn-danger btn-sm"
-          >
-            Hapus
-          </button>
-        </div>
       </div>
-
-      <Modal
-        show={showConfirm}
-        size="md"
-        onClose={() => setShowConfirm(false)}
-        popup
-      >
-        <ModalHeader />
-        <ModalBody>
-          <div className="text-center">
-            <p className="font-display text-lg font-semibold text-stone-800 dark:text-stone-100">
-              Hapus entri ini?
-            </p>
-            <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">
-              Entri{" "}
-              <span className="font-semibold text-stone-700 dark:text-stone-200">
-                {entry.destinasi}
-              </span>{" "}
-              akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.
-            </p>
-          </div>
-        </ModalBody>
-        <ModalFooter className="justify-center">
-          <button
-            type="button"
-            onClick={() => setShowConfirm(false)}
-            className="btn btn-ghost"
-          >
-            Batal
-          </button>
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={isDeleting}
-            className="btn btn-danger-solid"
-          >
-            {isDeleting ? "Menghapus…" : "Ya, hapus"}
-          </button>
-        </ModalFooter>
-      </Modal>
     </article>
   );
 }
