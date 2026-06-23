@@ -6,7 +6,7 @@
 ## 1. Ringkasan Proyek
 
 **Nama Proyek:** Memories  
-**Tech Stack:** Next.js 14 (App Router), Supabase, Tailwind CSS  
+**Tech Stack:** Next.js 14 (App Router), Supabase, Tailwind CSS, Flowbite  
 **Tujuan:** Aplikasi web yang memungkinkan pengguna menyimpan dan mengelola koleksi akun Google Drive yang berisi foto-foto liburan bersama teman, dilengkapi dengan informasi tanggal dan destinasi perjalanan.  
 **Akses:** Wajib login sebelum bisa menggunakan fitur apapun.
 
@@ -16,17 +16,17 @@
 
 ### 2.1 Autentikasi
 - Halaman login dengan email & password
-- Registrasi akun baru
+- Hanya 1 akun superuser yang bisa login (dibuat manual di Supabase)
 - Session management menggunakan Supabase Auth
-- Middleware proteksi route — semua halaman selain `/login` dan `/register` wajib terautentikasi
+- Middleware proteksi route — semua halaman selain `/login` wajib terautentikasi
 - Redirect otomatis ke `/login` jika belum login
 
 ### 2.2 Manajemen Entri Google Drive
 - Tambah entri baru (akun Google Drive + metadata liburan)
-- Lihat daftar semua entri milik user yang login
+- Lihat semua entri dari seluruh data yang tersimpan
 - Edit entri yang sudah ada
 - Hapus entri
-- Setiap entri terisolasi per user (user hanya melihat data miliknya sendiri)
+- Superuser memiliki akses penuh ke semua data
 
 ### 2.3 Data yang Disimpan per Entri
 | Field | Tipe | Keterangan |
@@ -35,7 +35,7 @@
 | `password` | String (encrypted) | Password akun Google Drive |
 | `tanggal` | Date | Tanggal liburan |
 | `destinasi` | String | Nama destinasi/lokasi liburan |
-| `google_drive_url` | String (opsional) | Link langsung ke folder Google Drive |
+| `google_drive_url` | String | Link langsung ke folder Google Drive |
 | `catatan` | Text (opsional) | Catatan tambahan |
 
 ---
@@ -49,36 +49,21 @@
 ```sql
 create table drive_accounts (
   id          uuid primary key default gen_random_uuid(),
-  user_id     uuid references auth.users(id) on delete cascade not null,
   email       text not null,
-  password    text not null,         -- disimpan terenkripsi (AES atau vault)
+  password    text not null,         -- disimpan terenkripsi (AES-256-GCM)
   tanggal     date not null,
   destinasi   text not null,
-  drive_url   text,
+  drive_url   text not null,
   catatan     text,
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
 );
-
--- Row Level Security: user hanya bisa akses data miliknya sendiri
-alter table drive_accounts enable row level security;
-
-create policy "User dapat melihat data miliknya"
-  on drive_accounts for select
-  using (auth.uid() = user_id);
-
-create policy "User dapat menambah data"
-  on drive_accounts for insert
-  with check (auth.uid() = user_id);
-
-create policy "User dapat mengubah data miliknya"
-  on drive_accounts for update
-  using (auth.uid() = user_id);
-
-create policy "User dapat menghapus data miliknya"
-  on drive_accounts for delete
-  using (auth.uid() = user_id);
 ```
+
+> ℹ️ Tidak ada RLS — akses database hanya bisa dilakukan setelah login sebagai superuser. Keamanan ditangani di level aplikasi via Supabase Auth + middleware.
+
+**Superuser dibuat manual di Supabase Dashboard:**
+> Authentication → Users → Invite user → masukkan email & password superuser.
 
 ---
 
@@ -88,10 +73,8 @@ create policy "User dapat menghapus data miliknya"
 memories/
 ├── app/
 │   ├── (auth)/
-│   │   ├── login/
-│   │   │   └── page.tsx           # Halaman login
-│   │   └── register/
-│   │       └── page.tsx           # Halaman registrasi
+│   │   └── login/
+│   │       └── page.tsx           # Halaman login superuser
 │   ├── (dashboard)/
 │   │   ├── layout.tsx             # Layout dengan navbar & proteksi auth
 │   │   ├── page.tsx               # Halaman utama — daftar entri
@@ -108,8 +91,7 @@ memories/
 │   └── middleware.ts              # Proteksi route global
 ├── components/
 │   ├── auth/
-│   │   ├── LoginForm.tsx
-│   │   └── RegisterForm.tsx
+│   │   └── LoginForm.tsx
 │   ├── dashboard/
 │   │   ├── DriveCard.tsx          # Card tampilan satu entri
 │   │   ├── DriveList.tsx          # Daftar semua entri
@@ -148,24 +130,17 @@ memories/
    ▼                     ▼
 [/login]            [/dashboard]
    │
-   ├─ Punya akun → Login → /dashboard
-   └─ Belum punya → /register → Login → /dashboard
+   └─ Login sebagai superuser → /dashboard
 ```
 
 ### 5.2 Halaman `/login`
 - Form: Email + Password
 - Tombol "Login"
-- Link ke halaman registrasi
 - Error handling: "Email atau password salah"
 - Redirect ke `/` (dashboard) setelah berhasil
+- Tidak ada link registrasi — akun superuser dibuat manual di Supabase
 
-### 5.3 Halaman `/register`
-- Form: Email + Password + Konfirmasi Password
-- Validasi: password minimal 8 karakter, keduanya harus sama
-- Tombol "Daftar"
-- Link ke halaman login
-
-### 5.4 Halaman `/` (Dashboard — Daftar Entri)
+### 5.3 Halaman `/` (Dashboard — Daftar Entri)
 - Navbar dengan nama user dan tombol logout
 - Tombol "+ Tambah Entri" di bagian atas
 - Grid/list card yang menampilkan semua entri:
@@ -177,13 +152,13 @@ memories/
 - Empty state jika belum ada entri: "Belum ada data. Tambahkan entri pertamamu!"
 - Search/filter berdasarkan destinasi (opsional)
 
-### 5.5 Halaman `/tambah`
+### 5.4 Halaman `/tambah`
 - Form dengan semua field yang diperlukan
 - Validasi client-side menggunakan Zod + React Hook Form
 - Tombol "Simpan" dan "Batal"
 - Feedback sukses/error setelah submit
 
-### 5.6 Halaman `/edit/[id]`
+### 5.5 Halaman `/edit/[id]`
 - Form yang sudah terisi data yang ada
 - Sama dengan form tambah, tapi pre-populated
 - Update data ke Supabase saat submit
@@ -200,7 +175,7 @@ interface DriveCardProps {
   password: string       // sudah terenkripsi, dekripsi saat "Tampilkan" diklik
   tanggal: string
   destinasi: string
-  driveUrl?: string
+  driveUrl: string
   catatan?: string
   onEdit: (id: string) => void
   onDelete: (id: string) => void
@@ -220,7 +195,7 @@ interface DriveFormData {
   password: string
   tanggal: string        // format: YYYY-MM-DD
   destinasi: string
-  driveUrl?: string
+  driveUrl: string
   catatan?: string
 }
 ```
@@ -284,7 +259,7 @@ import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-const PUBLIC_ROUTES = ['/login', '/register']
+const PUBLIC_ROUTES = ['/login']
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
@@ -311,7 +286,214 @@ export const config = {
 
 ---
 
-## 10. Package Dependencies
+## 10. UI Guidelines — Flowbite & Responsiveness
+
+### 10.1 Setup Flowbite
+
+```bash
+npm install flowbite flowbite-react
+```
+
+Tambahkan ke `tailwind.config.ts`:
+
+```typescript
+import type { Config } from 'tailwindcss'
+
+const config: Config = {
+  content: [
+    './app/**/*.{ts,tsx}',
+    './components/**/*.{ts,tsx}',
+    'node_modules/flowbite-react/lib/esm/**/*.js',
+  ],
+  plugins: [require('flowbite/plugin')],
+}
+
+export default config
+```
+
+Tambahkan script Flowbite di `app/layout.tsx`:
+
+```tsx
+import { ThemeModeScript } from 'flowbite-react'
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="id" suppressHydrationWarning>
+      <head>
+        <ThemeModeScript />
+      </head>
+      <body>{children}</body>
+    </html>
+  )
+}
+```
+
+### 10.2 Komponen Flowbite yang Digunakan
+
+| Komponen | Digunakan Untuk |
+|---|---|
+| `<Navbar>` | Navigasi utama dengan hamburger menu di mobile |
+| `<Card>` | Tampilan setiap entri Google Drive |
+| `<Button>` | Semua tombol aksi (tambah, simpan, hapus, logout) |
+| `<TextInput>` | Field email, password, destinasi, URL |
+| `<Datepicker>` | Pilih tanggal liburan |
+| `<Textarea>` | Field catatan |
+| `<Modal>` | Konfirmasi hapus entri |
+| `<Alert>` | Pesan sukses / error setelah submit |
+| `<Spinner>` | Loading state saat fetch / submit |
+| `<Badge>` | Label destinasi pada card |
+| `<Toast>` | Notifikasi singkat setelah aksi berhasil |
+| `<Dropdown>` | Menu user (profil, logout) di navbar |
+
+### 10.3 Panduan Responsiveness
+
+Gunakan breakpoint Tailwind secara konsisten di seluruh project:
+
+| Breakpoint | Ukuran | Perilaku |
+|---|---|---|
+| default | < 640px | Mobile — 1 kolom, full width |
+| `sm` | ≥ 640px | Tetap 1 kolom |
+| `md` | ≥ 768px | 2 kolom grid |
+| `lg` | ≥ 1024px | 3 kolom grid |
+| `xl` | ≥ 1280px | 3 kolom grid + sidebar spacing |
+
+**Grid card dashboard:**
+```tsx
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
+  {entries.map(entry => <DriveCard key={entry.id} {...entry} />)}
+</div>
+```
+
+**Navbar — mobile hamburger otomatis via Flowbite:**
+```tsx
+import { Navbar } from 'flowbite-react'
+
+<Navbar fluid rounded>
+  <Navbar.Brand href="/">
+    <span className="text-xl font-semibold">Memories</span>
+  </Navbar.Brand>
+  <Navbar.Toggle /> {/* Otomatis jadi hamburger di mobile */}
+  <Navbar.Collapse>
+    <Dropdown label={userEmail} inline>
+      <Dropdown.Item onClick={handleLogout}>Logout</Dropdown.Item>
+    </Dropdown>
+  </Navbar.Collapse>
+</Navbar>
+```
+
+**Form — full width di mobile, max-width di desktop:**
+```tsx
+<div className="min-h-screen flex items-center justify-center p-4">
+  <Card className="w-full max-w-md">
+    {/* Form login / register */}
+  </Card>
+</div>
+```
+
+**Card entri — teks tidak overflow di layar kecil:**
+```tsx
+<Card className="w-full">
+  <h5 className="text-lg font-bold truncate">{destinasi}</h5>
+  <p className="text-sm text-gray-500 truncate">{email}</p>
+  {/* ... */}
+  <div className="flex flex-col sm:flex-row gap-2 mt-4">
+    <Button size="sm" className="w-full sm:w-auto" onClick={onEdit}>Edit</Button>
+    <Button size="sm" color="failure" className="w-full sm:w-auto" onClick={onDelete}>Hapus</Button>
+  </div>
+</Card>
+```
+
+### 10.4 Contoh Implementasi Form (Flowbite)
+
+```tsx
+import { Button, Label, TextInput, Datepicker, Textarea, Alert } from 'flowbite-react'
+
+export function DriveForm({ mode, defaultValues, onSubmit }: DriveFormProps) {
+  return (
+    <form className="flex flex-col gap-4" onSubmit={handleSubmit(onSubmit)}>
+      <div>
+        <Label htmlFor="email" value="Email Google Drive" />
+        <TextInput
+          id="email"
+          type="email"
+          placeholder="contoh@gmail.com"
+          {...register('email')}
+          color={errors.email ? 'failure' : 'gray'}
+          helperText={errors.email?.message}
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="password" value="Password Google Drive" />
+        <TextInput
+          id="password"
+          type="password"
+          {...register('password')}
+          color={errors.password ? 'failure' : 'gray'}
+          helperText={errors.password?.message}
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="tanggal" value="Tanggal Liburan" />
+        <Datepicker
+          id="tanggal"
+          language="id-ID"
+          onSelectedDateChanged={(date) => setValue('tanggal', date.toISOString().split('T')[0])}
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="destinasi" value="Destinasi" />
+        <TextInput
+          id="destinasi"
+          placeholder="Bali, Lombok, dll."
+          {...register('destinasi')}
+          color={errors.destinasi ? 'failure' : 'gray'}
+          helperText={errors.destinasi?.message}
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="driveUrl" value="Link Google Drive" />
+        <TextInput
+          id="driveUrl"
+          type="url"
+          placeholder="https://drive.google.com/drive/folders/..."
+          {...register('driveUrl')}
+          color={errors.driveUrl ? 'failure' : 'gray'}
+          helperText={errors.driveUrl?.message}
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="catatan" value="Catatan (opsional)" />
+        <Textarea
+          id="catatan"
+          rows={3}
+          placeholder="Tambahkan catatan..."
+          {...register('catatan')}
+        />
+      </div>
+
+      {error && <Alert color="failure">{error}</Alert>}
+
+      <div className="flex flex-col sm:flex-row gap-2">
+        <Button type="submit" className="w-full sm:w-auto" isProcessing={isSubmitting}>
+          {mode === 'tambah' ? 'Simpan' : 'Update'}
+        </Button>
+        <Button color="gray" className="w-full sm:w-auto" onClick={() => router.back()}>
+          Batal
+        </Button>
+      </div>
+    </form>
+  )
+}
+```
+
+---
+
+## 11. Package Dependencies
 
 ```json
 {
@@ -321,11 +503,12 @@ export const config = {
     "react-dom": "^18.0.0",
     "@supabase/supabase-js": "^2.0.0",
     "@supabase/auth-helpers-nextjs": "^0.8.0",
+    "flowbite": "^2.0.0",
+    "flowbite-react": "^0.7.0",
     "react-hook-form": "^7.0.0",
     "@hookform/resolvers": "^3.0.0",
     "zod": "^3.0.0",
-    "date-fns": "^3.0.0",
-    "lucide-react": "^0.400.0"
+    "date-fns": "^3.0.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0",
@@ -340,30 +523,32 @@ export const config = {
 
 ---
 
-## 11. Urutan Implementasi (untuk AI Agent)
+## 12. Urutan Implementasi (untuk AI Agent)
 
 Ikuti urutan ini agar tidak ada dependency yang hilang:
 
 1. **Setup project** — `npx create-next-app@latest` dengan TypeScript + Tailwind
-2. **Setup Supabase** — buat project, jalankan SQL migration tabel `drive_accounts` + RLS policies
-3. **Konfigurasi env** — isi `.env.local` dengan kredensial Supabase
-4. **Buat Supabase client** — `lib/supabase/client.ts` dan `lib/supabase/server.ts`
-5. **Implementasi enkripsi** — `lib/encrypt.ts`
-6. **Buat middleware** — `middleware.ts` untuk proteksi route
-7. **Buat halaman auth** — `/login` dan `/register` beserta form components
-8. **Buat layout dashboard** — `app/(dashboard)/layout.tsx` dengan Navbar
-9. **Buat halaman dashboard** — daftar entri dengan `DriveCard` dan `DriveList`
-10. **Buat halaman tambah & edit** — form dengan validasi Zod
-11. **Testing end-to-end** — login → tambah entri → edit → hapus → logout
+2. **Setup Flowbite** — install `flowbite` + `flowbite-react`, konfigurasi `tailwind.config.ts`, tambah `ThemeModeScript` di root layout
+3. **Setup Supabase** — buat project, jalankan SQL migration tabel `drive_accounts` (tanpa RLS)
+4. **Buat superuser** — Supabase Dashboard → Authentication → Users → Invite user
+5. **Konfigurasi env** — isi `.env.local` dengan kredensial Supabase
+6. **Buat Supabase client** — `lib/supabase/client.ts` dan `lib/supabase/server.ts`
+7. **Implementasi enkripsi** — `lib/encrypt.ts`
+8. **Buat middleware** — `middleware.ts` untuk proteksi route (hanya `/login` yang public)
+9. **Buat halaman login** — menggunakan Flowbite `Card`, `TextInput`, `Button`
+10. **Buat layout dashboard** — `app/(dashboard)/layout.tsx` dengan Flowbite `Navbar` (responsive hamburger)
+11. **Buat halaman dashboard** — grid card responsive menggunakan Flowbite `Card` + `Badge`
+12. **Buat halaman tambah & edit** — form dengan Flowbite `TextInput`, `Datepicker`, `Textarea`, `Alert`
+13. **Testing end-to-end** — uji di mobile (375px), tablet (768px), dan desktop (1280px)
 
 ---
 
-## 12. Catatan Keamanan
+## 13. Catatan Keamanan
 
 | Aspek | Implementasi |
 |---|---|
 | Autentikasi | Supabase Auth (JWT-based) |
-| Isolasi data | Row Level Security (RLS) di Supabase |
+| Akses data | Single superuser — semua data bisa diakses setelah login |
 | Enkripsi password | AES-256-GCM di server-side |
 | Proteksi route | Next.js Middleware |
 | Validasi input | Zod schema di client & server |

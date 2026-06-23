@@ -1,0 +1,168 @@
+"use client";
+
+import { Modal, ModalHeader, ModalBody, ModalFooter } from "flowbite-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { deleteDrive } from "@/app/actions/drive";
+import type { DriveAccount } from "@/types";
+
+/** Pasangan gradien bertema perjalanan, dipilih deterministik dari destinasi. */
+const GRADIENTS: [string, string][] = [
+  ["#f59e0b", "#db2777"], // sunset
+  ["#0ea5e9", "#4f46e5"], // ocean
+  ["#10b981", "#047857"], // forest
+  ["#8b5cf6", "#6366f1"], // dusk
+  ["#ef4444", "#b45309"], // clay
+  ["#14b8a6", "#0891b2"], // lagoon
+];
+
+function gradientFor(key: string): string {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  }
+  const [a, b] = GRADIENTS[hash % GRADIENTS.length];
+  return `linear-gradient(135deg, ${a}, ${b})`;
+}
+
+function formatTanggal(tanggal: string): string {
+  const d = new Date(`${tanggal}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return tanggal;
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(d);
+}
+
+export function DriveCard({ entry }: { entry: DriveAccount }) {
+  const router = useRouter();
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [isDeleting, startDelete] = useTransition();
+
+  function handleDelete() {
+    startDelete(async () => {
+      await deleteDrive(entry.id);
+      setShowConfirm(false);
+      router.refresh();
+    });
+  }
+
+  return (
+    <article className="surface group flex flex-col overflow-hidden transition-shadow duration-300 hover:shadow-md">
+      {/* Banner album */}
+      <div
+        className="relative flex h-28 items-end p-4"
+        style={{ background: gradientFor(entry.destinasi) }}
+      >
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-2 -top-5 select-none font-display text-[7rem] font-semibold leading-none text-white/20"
+        >
+          {entry.destinasi.charAt(0).toUpperCase()}
+        </span>
+        <span className="absolute right-3 top-3 rounded-full bg-black/20 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm">
+          {formatTanggal(entry.tanggal)}
+        </span>
+        <h2 className="relative font-display text-xl font-semibold tracking-tight text-white drop-shadow-sm">
+          {entry.destinasi}
+        </h2>
+      </div>
+
+      {/* Detail */}
+      <div className="flex flex-1 flex-col gap-3 p-5">
+        <div className="space-y-2 text-sm">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-xs uppercase tracking-wide text-stone-400">
+              Email
+            </span>
+            <span className="truncate text-stone-700 dark:text-stone-300">
+              {entry.email}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs uppercase tracking-wide text-stone-400">
+              Password
+            </span>
+            <code className="max-w-[60%] truncate rounded-md bg-stone-100 px-2 py-0.5 font-mono text-xs text-stone-800 dark:bg-stone-800 dark:text-stone-100">
+              {entry.password}
+            </code>
+          </div>
+        </div>
+
+        {entry.catatan && (
+          <p className="line-clamp-2 border-l-2 border-brand-200 pl-3 text-sm italic text-stone-500 dark:border-brand-900 dark:text-stone-400">
+            {entry.catatan}
+          </p>
+        )}
+
+        <a
+          href={entry.drive_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-outline btn-sm mt-1 w-full"
+        >
+          Buka folder Google Drive
+        </a>
+
+        <div className="mt-auto flex items-center justify-end gap-1 border-t border-stone-100 pt-3 dark:border-stone-800">
+          <Link
+            href={`/edit/${entry.id}`}
+            className="btn btn-ghost btn-sm"
+          >
+            Edit
+          </Link>
+          <button
+            type="button"
+            onClick={() => setShowConfirm(true)}
+            className="btn btn-danger btn-sm"
+          >
+            Hapus
+          </button>
+        </div>
+      </div>
+
+      <Modal
+        show={showConfirm}
+        size="md"
+        onClose={() => setShowConfirm(false)}
+        popup
+      >
+        <ModalHeader />
+        <ModalBody>
+          <div className="text-center">
+            <p className="font-display text-lg font-semibold text-stone-800 dark:text-stone-100">
+              Hapus entri ini?
+            </p>
+            <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">
+              Entri{" "}
+              <span className="font-semibold text-stone-700 dark:text-stone-200">
+                {entry.destinasi}
+              </span>{" "}
+              akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.
+            </p>
+          </div>
+        </ModalBody>
+        <ModalFooter className="justify-center">
+          <button
+            type="button"
+            onClick={() => setShowConfirm(false)}
+            className="btn btn-ghost"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={isDeleting}
+            className="btn btn-danger-solid"
+          >
+            {isDeleting ? "Menghapus…" : "Ya, hapus"}
+          </button>
+        </ModalFooter>
+      </Modal>
+    </article>
+  );
+}
