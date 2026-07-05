@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import type { DriveAccount } from "@/types";
 
 /** Pasangan gradien bertema perjalanan, dipilih deterministik dari destinasi. */
@@ -30,6 +33,18 @@ function formatTanggal(tanggal: string): string {
 }
 
 export function DriveCard({ entry }: { entry: DriveAccount }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(`${entry.email}|${entry.password}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard tidak tersedia
+    }
+  }
+
   return (
     <article className="surface group flex flex-col overflow-hidden transition-shadow duration-300 hover:shadow-md">
       {/* Banner album */}
@@ -72,6 +87,22 @@ export function DriveCard({ entry }: { entry: DriveAccount }) {
             </code>
           </div>
         </div>
+
+        <button
+          onClick={handleCopy}
+          className="btn btn-outline btn-sm w-full"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="size-4"
+          >
+            <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+            <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
+          </svg>
+          {copied ? "Tersalin!" : "Salin email|password"}
+        </button>
 
         {entry.catatan && (
           <p className="line-clamp-2 border-l-2 border-brand-200 pl-3 text-sm italic text-stone-500 dark:border-brand-900 dark:text-stone-400">
